@@ -1,1 +1,7 @@
 .idea
+*.log
+*.pyc
+*.crc
+*.dat
+**/*.snappy.parquet
+**/._SUCCESS.crc

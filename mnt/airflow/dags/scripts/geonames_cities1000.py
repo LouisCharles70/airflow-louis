@@ -24,7 +24,6 @@ import pandas as pd
 
 from pyspark.conf import SparkConf
 from pyspark.sql import SparkSession
-from pyspark.sql.window import *
 from pyspark.sql.types import FloatType
 from pyspark.sql.functions import col
 
@@ -226,7 +225,7 @@ def main():
         rows = extract()
         if len(rows) > 30000:  # QUICK check for validity of data
             # Check if path already exists
-            path = S3_LOCATION + '/geonames_data/geonames_cities1000/' + year_month_day_hour
+            path = f'{S3_LOCATION}/{year_month_day_hour}'
 
             spark.sql("CREATE DATABASE IF NOT EXISTS fan_search")
             spark.sql("CREATE TABLE IF NOT EXISTS fan_search.geonames_cities1000 (lat Float, lon Float)")

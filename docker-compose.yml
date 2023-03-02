@@ -1,32 +1,28 @@
-version: '2.1'
-services:
+version: '3.4'
 
-######################################################
-# DATABASE SERVICE
-######################################################
-  postgres:
-    build: 'docker/postgres'
-    restart: always
-    container_name: postgres
-    logging:
-      driver: "json-file"
-      options:
-          max-file: "5"
-          max-size: "10m"
-    ports:
-      - "32769:5432"
-    #volumes:
-      #- ./mnt/postgres:/var/lib/postgresql/data/pgdata
-    environment:
-      - POSTGRES_USER=airflow
-      - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow_db
-      #- PGDATA=/var/lib/postgresql/data/pgdata
-    healthcheck:
-      test: [ "CMD", "pg_isready", "-q", "-d", "airflow_db", "-U", "airflow" ]
-      timeout: 45s
-      interval: 10s
-      retries: 10
+x-common:
+  &common
+  build:
+    context: .
+  user: "${AIRFLOW_UID}:0"
+  env_file:
+    - .env
+  volumes:
+    - ./mnt/airflow/dags:/opt/airflow/dags
+    - ./mnt/airflow/logs:/opt/airflow/logs
+    - ./mnt/airflow/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+
+x-depends-on:
+  &depends-on
+  depends_on:
+    postgres:
+      condition: service_healthy
+    airflow-init:
+      condition: service_completed_successfully
+
+
+services:
 
 ######################################################
 # HADOOP SERVICES
@@ -51,6 +47,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
   datanode:
     build: docker/hadoop/hadoop-datanode
@@ -72,6 +70,24 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
+
+#  hive-postgres:
+#    image: postgres:13
+#    container_name: hive-postgres
+#    environment:
+#      - POSTGRES_DB=metastore
+#      - POSTGRES_USER=postgres
+#      - POSTGRES_PASSWORD=postgres
+#    ports:
+#      - "5436:5432"
+#    healthcheck:
+#      test: [ "CMD", "pg_isready", "-U", "postgres" ]
+#      interval: 5s
+#      retries: 5
+#    networks:
+#      - airflow-network
 
   hive-metastore:
     build: docker/hive/hive-metastore
@@ -95,6 +111,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
   hive-server:
     build: docker/hive/hive-server
@@ -117,6 +135,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
   hive-webhcat:
     build: docker/hive/hive-webhcat
@@ -136,6 +156,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
   hue:
     build: docker/hue
@@ -161,6 +183,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
 ######################################################
 # SPARK SERVICES
@@ -185,6 +209,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
   spark-worker:
     build: docker/spark/spark-worker
@@ -205,6 +231,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
   livy:
     build: docker/livy
@@ -228,26 +256,93 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
 ######################################################
 # AIRFLOW
 ######################################################
+#  postgres:
+#    image: postgres:13
+#    container_name: postgres
+#    ports:
+#      - "5434:5432"
+#    healthcheck:
+#      test: ["CMD", "pg_isready", "-U", "airflow"]
+#      interval: 5s
+#      retries: 5
+#    env_file:
+#      - .env
+#    networks:
+#      - airflow-network
 
-  airflow:
-    build: docker/airflow
+  postgres:
+    build: './docker/postgres'
     restart: always
-    container_name: airflow
-    volumes:
-      - ./mnt/airflow/airflow.cfg:/opt/airflow/airflow.cfg
-      - ./mnt/airflow/dags:/opt/airflow/dags
+    container_name: postgres
+    logging:
+      driver: "json-file"
+      options:
+          max-file: "5"
+          max-size: "10m"
     ports:
-      - 8080:8080
+      - "32769:5432"
+    #volumes:
+      #- ./mnt/postgres:/var/lib/postgresql/data/pgdata
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow_db
+      #- PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
-      test: [ "CMD", "nc", "-z", "airflow", "8080" ]
+      test: [ "CMD", "pg_isready", "-q", "-d", "airflow_db", "-U", "airflow" ]
       timeout: 45s
       interval: 10s
       retries: 10
+#    networks:
+#      - airflow-network
 
+  scheduler:
+    <<: *common
+    <<: *depends-on
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: on-failure
+    ports:
+      - "8793:8793"
+#    networks:
+#      - airflow-network
+
+  webserver:
+    <<: *common
+    <<: *depends-on
+    container_name: airflow-webserver
+    restart: always
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+#    networks:
+#      - airflow-network
+
+  airflow-init:
+    <<: *common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}:/sources
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        exec /entrypoint airflow version
+#    networks:
+#      - airflow-network
 ######################################################
 # NETWORK
 ######################################################

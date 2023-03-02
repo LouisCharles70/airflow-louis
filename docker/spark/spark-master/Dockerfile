@@ -5,6 +5,7 @@ ENV SPARK_MASTER_UI_PORT=8082
 ENV SPARK_MASTER_LOG_DIR=/var/logs/spark
 
 COPY start-master.sh .
+COPY scripts .
 
 RUN chmod +x start-master.sh
 
